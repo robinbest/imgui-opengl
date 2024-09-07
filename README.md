@@ -4,13 +4,11 @@ This repository provides examples to build imgui applications with cmake and ope
 
 
 ## References
-- Yongkie's `imgui cmake starter` repo
-https://gitlab.com/ywiyogo/imgui-cmake-starter.git
+- Yongkie's `imgui cmake starter` [repo](https://gitlab.com/ywiyogo/imgui-cmake-starter.git)
 
-- conan-io's `examples2` repo
-https://github.com/conan-io/examples2.git
+- conan-io's `examples2` [repo](https://github.com/conan-io/examples2.git) and [blog](https://blog.conan.io/2019/06/26/An-introduction-to-the-Dear-ImGui-library.html)
 
-- Two submodules: imgui (docking branch) and gl3w
+- Two submodules: [imgui (docking branch)](https://github.com/ocornut/imgui.git) and [gl3w](https://github.com/skaslev/gl3w.git)
 
 
 ## Build on Rocky Linux 9.4 (Blue Onyx)
@@ -38,7 +36,7 @@ Install build tools, such as cmake, gnu c/c++, python. Install additional packag
     ./bin/imgui-opengl
 ```
 
-If things go well, you'll see the main window with original title!
+If things go well, you'll see the main window with the original title!
 ![OpenGL Example](./images/opengl0.png)
 
 ### License
