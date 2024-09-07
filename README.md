@@ -8,8 +8,9 @@ This repository provides examples to build imgui applications with cmake and ope
 
 - conan-io's `examples2` [repo](https://github.com/conan-io/examples2.git) and [blog](https://blog.conan.io/2019/06/26/An-introduction-to-the-Dear-ImGui-library.html)
 
-- Two submodules: [imgui (docking branch)](https://github.com/ocornut/imgui.git) and [gl3w](https://github.com/skaslev/gl3w.git)
+- Three submodules: [imgui (docking branch)](https://github.com/ocornut/imgui.git), [gl3w](https://github.com/skaslev/gl3w.git) and [glfw](https://github.com/glfw/glfw.git). glfw is built on windows only
 
+- [glew-2.1.0 api for windows 64bit](https://sourceforge.net/projects/glew/files/glew/2.1.0/glew-2.1.0-win32.zip), doc and 32 bit library files were removed to reduce size
 
 ## Build on Rocky Linux 9.4 (Blue Onyx)
 
@@ -33,11 +34,18 @@ Install build tools, such as cmake, gnu c/c++, python. Install additional packag
     mkdir build
     cd build
     cmake ..
+    make -j4
     ./bin/imgui-opengl
 ```
 
 If things go well, you'll see the main window with the original title!
 ![OpenGL Example](./images/opengl0.png)
+
+## Build on Windows
+
+### Visual Studio 17 2022
+
+Same steps as Linux. But after running `cmake ..` command, use Visual Studio IDE to open the solution file `imgui-opengl.sln` and build. The executables are in `bin/Debug` or `bin/Release` folder.
 
 ### License
 

@@ -3,10 +3,16 @@
 # will generate gl3w files
 add_subdirectory(gl3w)
 
+if (WIN32)
+    set(GLFW_BUILD_EXAMPLES OFF)
+    set(GLFW_BUILD_TESTS OFF)
+    set(GLFW_BUILD_DOCS OFF)
+    add_subdirectory(glfw)
+endif ()
+
 #------------------------------------------------------
 set(IMGUI_PATH ${CMAKE_SOURCE_DIR}/submodules/imgui)
 
-find_package(glfw3 REQUIRED CONFIG)
 find_package(OpenGL REQUIRED)
 set(OpenGL_GL_PREFERENCE "GLVND")
 
@@ -54,6 +60,9 @@ target_include_directories(im-opengl3
 target_link_libraries(im-opengl3
     ${GLLOADER_LIBRARIES}
     OpenGL::GL
-    OpenGL::GLX
 )
+if (NOT WIN32)
+    target_link_libraries(im-opengl3  OpenGL::GLX)
+endif()
+
 add_library(${project}::im-opengl3 ALIAS im-opengl3)

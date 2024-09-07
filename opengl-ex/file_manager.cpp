@@ -31,5 +31,5 @@ std::string FileManager::read(const std::string& filename)
 
 void FileManager::init_exe_path(const std::string& argument0)
 {
-    s_exe_path = fs::path(argument0).parent_path();
+    s_exe_path = fs::path(argument0).parent_path().string();
 }
