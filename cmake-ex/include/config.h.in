@@ -1,0 +1,5 @@
+// Author: Yongkie Wiyogo
+// Input file for generate include/config.h
+
+#define ${PROJECT_NAME}_VERSION_MAJOR @${PROJECT_NAME}_VERSION_MAJOR@
+#define ${PROJECT_NAME}_VERSION_MINOR @${PROJECT_NAME}_VERSION_MINOR@
