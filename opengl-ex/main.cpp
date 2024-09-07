@@ -69,8 +69,11 @@ void create_triangle(unsigned int &vbo, unsigned int &vao, unsigned int &ebo)
 	glBindVertexArray(0);
 }
 
-int main(int, char **)
+int main(int narg, char **argv)
 {
+	// Initialize exe path
+	FileManager::init_exe_path(argv[0]);
+
 	// Setup window
 	glfwSetErrorCallback(glfw_error_callback);
 	if (!glfwInit())
@@ -118,7 +121,8 @@ int main(int, char **)
 
 	// init shader
 	Shader triangle_shader;
-	triangle_shader.init(FileManager::read("simple-shader.vs"), FileManager::read("simple-shader.fs"));
+	triangle_shader.init(FileManager::read(FileManager::get_exe_path() + "/resources/simple-shader.vs"),
+	                     FileManager::read(FileManager::get_exe_path() + "/resources/simple-shader.fs"));
 
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
