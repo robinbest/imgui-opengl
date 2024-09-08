@@ -134,6 +134,7 @@ int main(int narg, char **argv)
 	// Setup Dear ImGui style
 	ImGui::StyleColorsDark();
 
+	bool do_once = true;
 	while (!glfwWindowShouldClose(window))
 	{
 		glfwPollEvents();
@@ -165,10 +166,26 @@ int main(int narg, char **argv)
         ImGui::ColorEdit3("color", color);
         // multiply triangle's color with this color
         triangle_shader.setUniform("color", color[0], color[1], color[2]);
+
+		//Issue #3
+		//Advance the ImGui cursor to claim space in the window,
+		//otherwise the window will appear small and needs to be resized
+		ImGui::Dummy(ImVec2(300, 100));
+		//dialog adapts to a long text string actually
+		//ImGui::Text("This is some useless text. I'm trying to make it long enough!");
         ImGui::End();
+
+		if (do_once) {
+			//prevent overlap, there should be a better way
+			ImVec2 tPos = ImGui::GetWindowPos();
+			ImGui::SetNextWindowPos(ImVec2(tPos.x, tPos.y+200));
+			do_once = false;
+		}
 
         ImGui::Begin("Conan logo");
         render_conan_logo();
+		//make sure window is big enough
+		ImGui::Dummy(ImVec2(300, 300));
         ImGui::End();
 		// Render dear imgui into screen
 		ImGui::Render();
