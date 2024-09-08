@@ -1,12 +1,15 @@
 # 2024
 
-# will generate gl3w files
+# generate gl3w files
+# this is a separate step to generate files so that gl3w.c can be included for downstream targets
+include(gl3w.cmake)
+# build
 add_subdirectory(gl3w)
 
 if (WIN32)
-    set(GLFW_BUILD_EXAMPLES OFF)
-    set(GLFW_BUILD_TESTS OFF)
-    set(GLFW_BUILD_DOCS OFF)
+    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "dont build glfw examples")
+    set(GLFW_BUILD_TESTS OFF CACHE BOOL "dont build glfw tests")
+    set(GLFW_BUILD_DOCS OFF CACHE BOOL "dont build glfw docs")
     add_subdirectory(glfw)
 endif ()
 

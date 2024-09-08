@@ -26,26 +26,33 @@ Install build tools, such as cmake, gnu c/c++, python. Install additional packag
 
 ### Build and run
 
+1. Prepare the repository
 ```
     git clone https://github.com/robinbest/imgui-opengl.git
     cd imgui-opengl
     git submodule init
     git submodule update
+```
+
+2. Build
+```
     mkdir build
     cd build
     cmake ..
     make -j4
-    ./bin/imgui-opengl
 ```
 
-If things go well, you'll see the main window with the original title!
+3. Run
+Stay in the build folder, run e.g. `./bin/imgui-opengl`. If things go well, you'll see the main window with the original title!
 ![OpenGL Example](./images/opengl0.png)
 
 ## Build on Windows
 
 ### Visual Studio 17 2022
 
-Same steps as Linux. But after running `cmake ..` command, use Visual Studio IDE to open the solution file `imgui-opengl.sln` and build. The executables are in `bin/Debug` or `bin/Release` folder.
+Same steps to clone the code as Linux. Run `cmake ..` from `VS2022 x64 Native Tools Command Prompt`. Run Visual Studio IDE to open the solution file `imgui-opengl.sln` and build. Or you can run `cmake --build . --target ALL_BUILD` to build.
+
+The executables are in `bin/Debug` or `bin/Release` folder.
 
 ### License
 
