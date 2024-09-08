@@ -1,0 +1,10 @@
+[submodule "submodules/imgui"]
+	path = submodules/imgui
+	url = https://github.com/ocornut/imgui.git
+	branch = docking
+[submodule "submodules/gl3w"]
+	path = submodules/gl3w
+	url = https://github.com/skaslev/gl3w.git
+[submodule "submodules/glfw"]
+	path = submodules/glfw
+	url = https://github.com/shaxbee/glfw.git
