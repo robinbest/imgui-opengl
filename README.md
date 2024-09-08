@@ -2,6 +2,7 @@
 
 This repository provides examples to build imgui applications with cmake and opengl. Code is relatively up to date with respect to all libraries and tools used. Note that not all imgui features are built and used.
 
+September 2024
 
 ## References
 - Yongkie's `imgui cmake starter` [repo](https://gitlab.com/ywiyogo/imgui-cmake-starter.git)
@@ -23,8 +24,8 @@ Install build tools, such as cmake, gnu c/c++, python. Install additional packag
     yum install glfw glfw-devel glew glew-devel
 ```
 
-
 ### Build and run
+Using gcc v11.4, cmake v3.26
 
 1. Prepare the repository
 ```
@@ -46,13 +47,23 @@ Install build tools, such as cmake, gnu c/c++, python. Install additional packag
 Stay in the build folder, run e.g. `./bin/imgui-opengl`. If things go well, you'll see the main window with the original title!
 ![OpenGL Example](./images/opengl0.png)
 
+## Build on Ubuntu 22.04 (Jammy Jellyfinsh)
+
+```
+    sudo apt-get install freeglut3-dev libglfw3 libglfw3-dev libglew-dev
+```
+Follow the same steps as Rocky Linux.
+
 ## Build on Windows
 
 ### Visual Studio 17 2022
 
-Same steps to clone the code as Linux. Run `cmake ..` from `VS2022 x64 Native Tools Command Prompt`. Run Visual Studio IDE to open the solution file `imgui-opengl.sln` and build. Or you can run `cmake --build . --target ALL_BUILD` to build.
+- Same steps to clone the code as Linux
+- Run `VS2022 x64 Native Tools Command Prompt`
+- Enter the build directory and run `cmake ..` 
+- Run `VS2022 IDE` to open the solution file `imgui-opengl.sln` and build. Or you can run `cmake --build . --target ALL_BUILD` to build.
 
-The executables are in `bin/Debug` or `bin/Release` folder.
+The executables are in `bin/Debug` or `bin/Release` folder. By default, the Debug configuration is built.
 
 ### License
 
