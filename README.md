@@ -13,6 +13,8 @@ September 2024
 
 - [glew-2.1.0 api for windows 64bit](https://sourceforge.net/projects/glew/files/glew/2.1.0/glew-2.1.0-win32.zip), doc and 32 bit library files were removed to reduce size
 
+- [ctest](https://github.com/coderefinery/cmake-workshop/tree/main)
+
 ## Build on Rocky Linux 9.4 (Blue Onyx)
 
 ### Prerequisites
@@ -48,6 +50,8 @@ Stay in the build folder, run e.g. `./bin/imgui-opengl`. If things go well, you'
 ![OpenGL Example](./images/opengl0.png)
 
 ## Build on Ubuntu 22.04 (Jammy Jellyfinsh)
+- gcc 11.4
+- clang 14.0 (see .github/workflow)
 
 ```
     sudo apt-get install freeglut3-dev libglfw3 libglfw3-dev libglew-dev
