@@ -46,3 +46,7 @@ add_subdirectory(cmake-ex)
 #opengl example
 include_directories(submodules/imgui/backends)
 add_subdirectory(opengl-ex)
+
+# enable testing functionality
+enable_testing()
+add_subdirectory(tests)
