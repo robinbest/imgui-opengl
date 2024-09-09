@@ -4,7 +4,7 @@ name: CMake on multiple platforms
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "5-continuous-integration" ]
   pull_request:
     branches: [ "main" ]
 
