@@ -5,205 +5,436 @@
 #include "imgui_impl_opengl3.h"
 #include "opengl_shader.h"
 #include "file_manager.h"
+
 #include <stdio.h>
 #include <iostream>
 #include <vector>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 
-#include <GL/glew.h> // Initialize with glewInit()
-
-// Include glfw3.h after our OpenGL definitions
+#include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
-#define PI 3.14159265358979323846
+#define PI 3.14159265358979323846f
 
-static void glfw_error_callback(int error, const char *description)
+static void glfw_error_callback(int error, const char* description)
 {
-	fprintf(stderr, "Glfw Error %d: %s\n", error, description);
+    fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
 
-void render_conan_logo()
+struct Mat4
 {
-	ImDrawList *draw_list = ImGui::GetWindowDrawList();
-	float sz = 300.0f;
-	static ImVec4 col1 = ImVec4(68.0 / 255.0, 83.0 / 255.0, 89.0 / 255.0, 1.0f);
-	static ImVec4 col2 = ImVec4(40.0 / 255.0, 60.0 / 255.0, 80.0 / 255.0, 1.0f);
-	static ImVec4 col3 = ImVec4(50.0 / 255.0, 65.0 / 255.0, 82.0 / 255.0, 1.0f);
-	static ImVec4 col4 = ImVec4(20.0 / 255.0, 40.0 / 255.0, 60.0 / 255.0, 1.0f);
-	const ImVec2 p = ImGui::GetCursorScreenPos();
-	float x = p.x + 4.0f, y = p.y + 4.0f;
-	draw_list->AddQuadFilled(ImVec2(x, y + 0.25 * sz), ImVec2(x + 0.5 * sz, y + 0.5 * sz), ImVec2(x + sz, y + 0.25 * sz), ImVec2(x + 0.5 * sz, y), ImColor(col1));
-	draw_list->AddQuadFilled(ImVec2(x, y + 0.25 * sz), ImVec2(x + 0.5 * sz, y + 0.5 * sz), ImVec2(x + 0.5 * sz, y + 1.0 * sz), ImVec2(x, y + 0.75 * sz), ImColor(col2));
-	draw_list->AddQuadFilled(ImVec2(x + 0.5 * sz, y + 0.5 * sz), ImVec2(x + sz, y + 0.25 * sz), ImVec2(x + sz, y + 0.75 * sz), ImVec2(x + 0.5 * sz, y + 1.0 * sz), ImColor(col3));
-	draw_list->AddLine(ImVec2(x + 0.75 * sz, y + 0.375 * sz), ImVec2(x + 0.75 * sz, y + 0.875 * sz), ImColor(col4));
-    draw_list->AddBezierCubic(ImVec2(x + 0.72 * sz, y + 0.24 * sz), ImVec2(x + 0.68 * sz, y + 0.15 * sz), ImVec2(x + 0.48 * sz, y + 0.13 * sz), ImVec2(x + 0.39 * sz, y + 0.17 * sz), ImColor(col4), 10, 18);
-    draw_list->AddBezierCubic(ImVec2(x + 0.39 * sz, y + 0.17 * sz), ImVec2(x + 0.2 * sz, y + 0.25 * sz), ImVec2(x + 0.3 * sz, y + 0.35 * sz), ImVec2(x + 0.49 * sz, y + 0.38 * sz), ImColor(col4), 10, 18);
+    float v[16];
+};
+
+static Mat4 identity()
+{
+    Mat4 m = {};
+    m.v[0] = 1.0f;
+    m.v[5] = 1.0f;
+    m.v[10] = 1.0f;
+    m.v[15] = 1.0f;
+    return m;
 }
 
-void create_triangle(unsigned int &vbo, unsigned int &vao, unsigned int &ebo)
+static Mat4 multiply(const Mat4& a, const Mat4& b)
 {
-
-	// create the triangle
-	float triangle_vertices[] = {
-		0.0f, 0.25f, 0.0f,	// position vertex 1
-		1.0f, 0.0f, 0.0f,	 // color vertex 1
-		0.25f, -0.25f, 0.0f,  // position vertex 1
-		0.0f, 1.0f, 0.0f,	 // color vertex 1
-		-0.25f, -0.25f, 0.0f, // position vertex 1
-		0.0f, 0.0f, 1.0f,	 // color vertex 1
-	};
-	unsigned int triangle_indices[] = {
-		0, 1, 2};
-	glGenVertexArrays(1, &vao);
-	glGenBuffers(1, &vbo);
-	glGenBuffers(1, &ebo);
-	glBindVertexArray(vao);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(triangle_vertices), triangle_vertices, GL_STATIC_DRAW);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(triangle_indices), triangle_indices, GL_STATIC_DRAW);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
-	glEnableVertexAttribArray(1);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
+    Mat4 out = {};
+    for (int col = 0; col < 4; ++col)
+    {
+        for (int row = 0; row < 4; ++row)
+        {
+            out.v[col * 4 + row] =
+                a.v[0 * 4 + row] * b.v[col * 4 + 0] +
+                a.v[1 * 4 + row] * b.v[col * 4 + 1] +
+                a.v[2 * 4 + row] * b.v[col * 4 + 2] +
+                a.v[3 * 4 + row] * b.v[col * 4 + 3];
+        }
+    }
+    return out;
 }
 
-int main(int narg, char **argv)
+static Mat4 perspective(float fov_y_radians, float aspect, float z_near, float z_far)
 {
-	// Initialize exe path
-	FileManager::init_exe_path(argv[0]);
+    Mat4 m = {};
+    const float t = std::tan(fov_y_radians * 0.5f);
 
-	// Setup window
-	glfwSetErrorCallback(glfw_error_callback);
-	if (!glfwInit())
-		return 1;
+    m.v[0] = 1.0f / (aspect * t);
+    m.v[5] = 1.0f / t;
+    m.v[10] = -(z_far + z_near) / (z_far - z_near);
+    m.v[11] = -1.0f;
+    m.v[14] = -(2.0f * z_far * z_near) / (z_far - z_near);
 
-		// Decide GL+GLSL versions
+    return m;
+}
+
+static Mat4 translate(float x, float y, float z)
+{
+    Mat4 m = identity();
+    m.v[12] = x;
+    m.v[13] = y;
+    m.v[14] = z;
+    return m;
+}
+
+static Mat4 rotate_x(float angle)
+{
+    Mat4 m = identity();
+    const float c = std::cos(angle);
+    const float s = std::sin(angle);
+
+    m.v[5] = c;
+    m.v[6] = s;
+    m.v[9] = -s;
+    m.v[10] = c;
+
+    return m;
+}
+
+static Mat4 rotate_y(float angle)
+{
+    Mat4 m = identity();
+    const float c = std::cos(angle);
+    const float s = std::sin(angle);
+
+    m.v[0] = c;
+    m.v[2] = -s;
+    m.v[8] = s;
+    m.v[10] = c;
+
+    return m;
+}
+
+static void create_cube(unsigned int& vbo, unsigned int& vao)
+{
+    const float cube_vertices[] = {
+        // positions            // colors
+
+        // front
+        -0.5f, -0.5f,  0.5f,    1.0f, 0.2f, 0.2f,
+         0.5f, -0.5f,  0.5f,    1.0f, 0.2f, 0.2f,
+         0.5f,  0.5f,  0.5f,    1.0f, 0.2f, 0.2f,
+         0.5f,  0.5f,  0.5f,    1.0f, 0.2f, 0.2f,
+        -0.5f,  0.5f,  0.5f,    1.0f, 0.2f, 0.2f,
+        -0.5f, -0.5f,  0.5f,    1.0f, 0.2f, 0.2f,
+
+        // back
+        -0.5f, -0.5f, -0.5f,    0.2f, 1.0f, 0.2f,
+        -0.5f,  0.5f, -0.5f,    0.2f, 1.0f, 0.2f,
+         0.5f,  0.5f, -0.5f,    0.2f, 1.0f, 0.2f,
+         0.5f,  0.5f, -0.5f,    0.2f, 1.0f, 0.2f,
+         0.5f, -0.5f, -0.5f,    0.2f, 1.0f, 0.2f,
+        -0.5f, -0.5f, -0.5f,    0.2f, 1.0f, 0.2f,
+
+        // left
+        -0.5f, -0.5f, -0.5f,    0.2f, 0.4f, 1.0f,
+        -0.5f, -0.5f,  0.5f,    0.2f, 0.4f, 1.0f,
+        -0.5f,  0.5f,  0.5f,    0.2f, 0.4f, 1.0f,
+        -0.5f,  0.5f,  0.5f,    0.2f, 0.4f, 1.0f,
+        -0.5f,  0.5f, -0.5f,    0.2f, 0.4f, 1.0f,
+        -0.5f, -0.5f, -0.5f,    0.2f, 0.4f, 1.0f,
+
+        // right
+         0.5f, -0.5f, -0.5f,    1.0f, 0.8f, 0.2f,
+         0.5f,  0.5f, -0.5f,    1.0f, 0.8f, 0.2f,
+         0.5f,  0.5f,  0.5f,    1.0f, 0.8f, 0.2f,
+         0.5f,  0.5f,  0.5f,    1.0f, 0.8f, 0.2f,
+         0.5f, -0.5f,  0.5f,    1.0f, 0.8f, 0.2f,
+         0.5f, -0.5f, -0.5f,    1.0f, 0.8f, 0.2f,
+
+         // top
+         -0.5f,  0.5f, -0.5f,    0.7f, 0.2f, 1.0f,
+         -0.5f,  0.5f,  0.5f,    0.7f, 0.2f, 1.0f,
+          0.5f,  0.5f,  0.5f,    0.7f, 0.2f, 1.0f,
+          0.5f,  0.5f,  0.5f,    0.7f, 0.2f, 1.0f,
+          0.5f,  0.5f, -0.5f,    0.7f, 0.2f, 1.0f,
+         -0.5f,  0.5f, -0.5f,    0.7f, 0.2f, 1.0f,
+
+         // bottom
+         -0.5f, -0.5f, -0.5f,    0.2f, 1.0f, 1.0f,
+          0.5f, -0.5f, -0.5f,    0.2f, 1.0f, 1.0f,
+          0.5f, -0.5f,  0.5f,    0.2f, 1.0f, 1.0f,
+          0.5f, -0.5f,  0.5f,    0.2f, 1.0f, 1.0f,
+         -0.5f, -0.5f,  0.5f,    0.2f, 1.0f, 1.0f,
+         -0.5f, -0.5f, -0.5f,    0.2f, 1.0f, 1.0f
+    };
+
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cube_vertices), cube_vertices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+
+static void create_viewport_fbo(GLuint& fbo, GLuint& color_tex, GLuint& depth_rbo, int width, int height)
+{
+    if (fbo != 0)
+    {
+        glDeleteFramebuffers(1, &fbo);
+        glDeleteTextures(1, &color_tex);
+        glDeleteRenderbuffers(1, &depth_rbo);
+        fbo = 0;
+        color_tex = 0;
+        depth_rbo = 0;
+    }
+
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+    glGenTextures(1, &color_tex);
+    glBindTexture(GL_TEXTURE_2D, color_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_tex, 0);
+
+    glGenRenderbuffers(1, &depth_rbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, depth_rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, depth_rbo);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cerr << "ERROR: viewport framebuffer is not complete." << std::endl;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+int main(int narg, char** argv)
+{
+    FileManager::init_exe_path(argv[0]);
+
+    glfwSetErrorCallback(glfw_error_callback);
+    if (!glfwInit())
+        return 1;
+
 #if __APPLE__
-	// GL 3.2 + GLSL 150
-	const char *glsl_version = "#version 150";
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); // 3.2+ only
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);		   // Required on Mac
+    const char* glsl_version = "#version 150";
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #else
-	// GL 3.0 + GLSL 130
-	const char *glsl_version = "#version 130";
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-	//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-	//glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
+    const char* glsl_version = "#version 330";
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #endif
 
-	// Create window with graphics context
-	GLFWwindow *window = glfwCreateWindow(1280, 720, "Dear ImGui - Conan", NULL, NULL);
-	if (window == NULL)
-		return 1;
-	glfwMakeContextCurrent(window);
-	glfwSwapInterval(1); // Enable vsync
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Dear ImGui - OpenGL Viewport", NULL, NULL);
+    if (window == NULL)
+        return 1;
 
-	bool err = glewInit() != GLEW_OK;
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1);
 
-	if (err)
-	{
-		fprintf(stderr, "Failed to initialize OpenGL loader!\n");
-		return 1;
-	}
+    bool err = glewInit() != GLEW_OK;
+    if (err)
+    {
+        fprintf(stderr, "Failed to initialize OpenGL loader!\n");
+        return 1;
+    }
 
-	int screen_width, screen_height;
-	glfwGetFramebufferSize(window, &screen_width, &screen_height);
-	glViewport(0, 0, screen_width, screen_height);
+    std::cout << "GL_VERSION: " << glGetString(GL_VERSION) << std::endl;
+    std::cout << "GLSL_VERSION: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
 
-	// create our geometries
-	unsigned int vbo, vao, ebo;
-	create_triangle(vbo, vao, ebo);
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
 
-	// init shader
-	Shader triangle_shader;
-	triangle_shader.init(FileManager::read(FileManager::get_exe_path() + "/resources/simple-shader.vs"),
-	                     FileManager::read(FileManager::get_exe_path() + "/resources/simple-shader.fs"));
+    unsigned int vbo = 0;
+    unsigned int vao = 0;
+    create_cube(vbo, vao);
 
-	// Setup Dear ImGui context
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGuiIO &io = ImGui::GetIO();
-	// Setup Platform/Renderer bindings
-	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	ImGui_ImplOpenGL3_Init(glsl_version);
-	// Setup Dear ImGui style
-	ImGui::StyleColorsDark();
+    Shader scene_shader;
+    scene_shader.init(
+        FileManager::read(FileManager::get_exe_path() + "/resources/simple-shader.vs"),
+        FileManager::read(FileManager::get_exe_path() + "/resources/simple-shader.fs"));
 
-	bool do_once = true;
-	while (!glfwWindowShouldClose(window))
-	{
-		glfwPollEvents();
-		glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
-		glClear(GL_COLOR_BUFFER_BIT);
+    GLuint viewport_fbo = 0;
+    GLuint viewport_tex = 0;
+    GLuint viewport_depth = 0;
+    int viewport_fb_w = 1;
+    int viewport_fb_h = 1;
+    create_viewport_fbo(viewport_fbo, viewport_tex, viewport_depth, viewport_fb_w, viewport_fb_h);
 
-		// feed inputs to dear imgui, start new frame
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplGlfw_NewFrame();
-		ImGui::NewFrame();
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigWindowsMoveFromTitleBarOnly = true;
 
-		// rendering our geometries
-		triangle_shader.use();
-		glBindVertexArray(vao);
-		glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, 0);
-		glBindVertexArray(0);
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init(glsl_version);
+    ImGui::StyleColorsDark();
 
-		// render your GUI
-		ImGui::Begin("Triangle Position/Color");
-		static float rotation = 0.0;
-		ImGui::SliderFloat("rotation", &rotation, 0, 2 * PI);
-		static float translation[] = {0.0, 0.0};
-		ImGui::SliderFloat2("position", translation, -1.0, 1.0);
-        static float color[4] = { 1.0f,1.0f,1.0f,1.0f };
-        // pass the parameters to the shader
-        triangle_shader.setUniform("rotation", rotation);
-        triangle_shader.setUniform("translation", translation[0], translation[1]);
-        // color picker
-        ImGui::ColorEdit3("color", color);
-        // multiply triangle's color with this color
-        triangle_shader.setUniform("color", color[0], color[1], color[2]);
+    float yaw = 0.6f;
+    float pitch = 0.4f;
+    float distance = 3.0f;
+    float target_x = 0.0f;
+    float target_y = 0.0f;
+    float tint[3] = { 1.0f, 1.0f, 1.0f };
 
-		//Issue #3
-		//Advance the ImGui cursor to claim space in the window,
-		//otherwise the window will appear small and needs to be resized
-		ImGui::Dummy(ImVec2(300, 100));
-		//dialog adapts to a long text string actually
-		//ImGui::Text("This is some useless text. I'm trying to make it long enough!");
+    while (!glfwWindowShouldClose(window))
+    {
+        glfwPollEvents();
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::Begin("Scene Controls");
+        ImGui::Text("Direct mouse controls in the viewport:");
+        ImGui::BulletText("Left drag: orbit");
+        ImGui::BulletText("Right drag: pan");
+        ImGui::BulletText("Mouse wheel: zoom");
+        ImGui::ColorEdit3("Tint", tint);
+
+        if (ImGui::Button("Reset View"))
+        {
+            yaw = 0.6f;
+            pitch = 0.4f;
+            distance = 3.0f;
+            target_x = 0.0f;
+            target_y = 0.0f;
+        }
         ImGui::End();
 
-		if (do_once) {
-			//prevent overlap, there should be a better way
-			ImVec2 tPos = ImGui::GetWindowPos();
-			ImGui::SetNextWindowPos(ImVec2(tPos.x, tPos.y+200));
-			do_once = false;
-		}
+        ImGui::Begin("3D Render View");
 
-        ImGui::Begin("Conan logo");
-        render_conan_logo();
-		//make sure window is big enough
-		ImGui::Dummy(ImVec2(300, 300));
+        ImVec2 avail = ImGui::GetContentRegionAvail();
+        if (avail.x < 50.0f) avail.x = 50.0f;
+        if (avail.y < 50.0f) avail.y = 50.0f;
+
+        int desired_w = static_cast<int>(avail.x);
+        int desired_h = static_cast<int>(avail.y);
+
+        if (desired_w != viewport_fb_w || desired_h != viewport_fb_h)
+        {
+            viewport_fb_w = desired_w;
+            viewport_fb_h = desired_h;
+            create_viewport_fbo(viewport_fbo, viewport_tex, viewport_depth, viewport_fb_w, viewport_fb_h);
+        }
+
+        // Create an interactive region for the viewport.
+        ImGui::InvisibleButton(
+            "viewport_canvas",
+            avail,
+            ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+
+        const bool viewport_hovered = ImGui::IsItemHovered();
+        const bool viewport_active = ImGui::IsItemActive();
+        const ImVec2 image_min = ImGui::GetItemRectMin();
+        const ImVec2 image_max = ImGui::GetItemRectMax();
+
+        // Draw the rendered texture into the exact same rect.
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        draw_list->AddImage(
+            (ImTextureID)(intptr_t)viewport_tex,
+            image_min,
+            image_max,
+            ImVec2(0, 1),
+            ImVec2(1, 0));
+
+        // Optional border
+        draw_list->AddRect(image_min, image_max, IM_COL32(255, 255, 255, 40));
+
+        if (viewport_active && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+        {
+            const ImVec2 drag = ImGui::GetIO().MouseDelta;
+            //yaw += drag.x * 0.01f;
+            //pitch += drag.y * 0.01f;
+            yaw -= drag.x * 0.01f;
+            pitch -= drag.y * 0.01f;
+
+            const float pitch_limit = 1.45f;
+            pitch = std::clamp(pitch, -pitch_limit, pitch_limit);
+        }
+
+        if (viewport_active && ImGui::IsMouseDragging(ImGuiMouseButton_Right))
+        {
+            const ImVec2 drag = ImGui::GetIO().MouseDelta;
+
+            const float pan_speed = 0.0025f * distance;
+            target_x -= drag.x * pan_speed;
+            target_y += drag.y * pan_speed;
+        }
+
+        if (viewport_hovered && std::fabs(ImGui::GetIO().MouseWheel) > 0.0f)
+        {
+            distance -= ImGui::GetIO().MouseWheel * 0.25f;
+            distance = std::clamp(distance, 1.5f, 10.0f);
+        }
+
         ImGui::End();
-		// Render dear imgui into screen
-		ImGui::Render();
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-		int display_w, display_h;
-		glfwGetFramebufferSize(window, &display_w, &display_h);
-		glViewport(0, 0, display_w, display_h);
-		glfwSwapBuffers(window);
-	}
+        glBindFramebuffer(GL_FRAMEBUFFER, viewport_fbo);
+        glViewport(0, 0, viewport_fb_w, viewport_fb_h);
+        glEnable(GL_DEPTH_TEST);
+        glClearColor(0.12f, 0.13f, 0.16f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	// Cleanup
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplGlfw_Shutdown();
-	ImGui::DestroyContext();
+        const float aspect = static_cast<float>(viewport_fb_w) / static_cast<float>(viewport_fb_h);
+        Mat4 proj = perspective(45.0f * PI / 180.0f, aspect, 0.1f, 100.0f);
 
-	glfwDestroyWindow(window);
-	glfwTerminate();
+        Mat4 model = identity();
 
-	return 0;
+        // Pan by shifting the scene in camera space before the orbit rotation.
+        Mat4 pan = translate(-target_x, -target_y, 0.0f);
+        Mat4 orbit = multiply(rotate_x(-pitch), rotate_y(-yaw));
+        Mat4 dolly = translate(0.0f, 0.0f, -distance);
+
+        Mat4 view = multiply(dolly, multiply(orbit, pan));
+        Mat4 mvp = multiply(proj, multiply(view, model));
+
+        scene_shader.use();
+        scene_shader.setUniformMat4("u_mvp", mvp.v);
+        scene_shader.setUniform("tint", tint[0], tint[1], tint[2]);
+
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+        glBindVertexArray(0);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        int display_w = 0;
+        int display_h = 0;
+        glfwGetFramebufferSize(window, &display_w, &display_h);
+        glViewport(0, 0, display_w, display_h);
+        glClearColor(0.10f, 0.10f, 0.10f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        glfwSwapBuffers(window);
+    }
+
+    glDeleteFramebuffers(1, &viewport_fbo);
+    glDeleteTextures(1, &viewport_tex);
+    glDeleteRenderbuffers(1, &viewport_depth);
+
+    glDeleteBuffers(1, &vbo);
+    glDeleteVertexArrays(1, &vao);
+
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
+
+    return 0;
 }
