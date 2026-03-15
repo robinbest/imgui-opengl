@@ -23,6 +23,58 @@ static void glfw_error_callback(int error, const char* description)
     fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
 
+struct Vec3
+{
+    float x, y, z;
+};
+
+static Vec3 make_vec3(float x, float y, float z)
+{
+    return { x, y, z };
+}
+
+static Vec3 add(const Vec3& a, const Vec3& b)
+{
+    return { a.x + b.x, a.y + b.y, a.z + b.z };
+}
+
+static Vec3 sub(const Vec3& a, const Vec3& b)
+{
+    return { a.x - b.x, a.y - b.y, a.z - b.z };
+}
+
+static Vec3 mul(const Vec3& v, float s)
+{
+    return { v.x * s, v.y * s, v.z * s };
+}
+
+static float dot(const Vec3& a, const Vec3& b)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+static Vec3 cross(const Vec3& a, const Vec3& b)
+{
+    return {
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    };
+}
+
+static float length(const Vec3& v)
+{
+    return std::sqrt(dot(v, v));
+}
+
+static Vec3 normalize(const Vec3& v)
+{
+    float len = length(v);
+    if (len < 1e-6f)
+        return { 0.0f, 0.0f, 0.0f };
+    return { v.x / len, v.y / len, v.z / len };
+}
+
 struct Mat4
 {
     float v[16];
@@ -105,6 +157,121 @@ static Mat4 rotate_y(float angle)
 
     return m;
 }
+
+//real camera view transform instead of building view from ad hoc matrix composition
+static Mat4 look_at(const Vec3& eye, const Vec3& target, const Vec3& up)
+{
+    /*
+      eye    = camera_position
+      center = target
+      up     = camera up direction
+      OpenGL: Place the camera at eye and rotate it so it looks at center.
+    */
+    Vec3 f = normalize(sub(target, eye));
+    Vec3 s = normalize(cross(f, up));
+    Vec3 u = cross(s, f);
+
+    Mat4 m = identity();
+
+    m.v[0] = s.x;
+    m.v[1] = u.x;
+    m.v[2] = -f.x;
+    m.v[3] = 0.0f;
+
+    m.v[4] = s.y;
+    m.v[5] = u.y;
+    m.v[6] = -f.y;
+    m.v[7] = 0.0f;
+
+    m.v[8] = s.z;
+    m.v[9] = u.z;
+    m.v[10] = -f.z;
+    m.v[11] = 0.0f;
+
+    m.v[12] = -dot(s, eye);
+    m.v[13] = -dot(u, eye);
+    m.v[14] = dot(f, eye);
+    m.v[15] = 1.0f;
+
+    return m;
+}
+
+struct OrbitCamera
+{
+    Vec3 target = { 0.0f, 0.0f, 0.0f };
+    float yaw = 0.6f;
+    float pitch = 0.4f;
+    float distance = 3.0f;
+
+    Vec3 position() const
+    {
+        const float cp = std::cos(pitch);
+        const float sp = std::sin(pitch);
+        const float cy = std::cos(yaw);
+        const float sy = std::sin(yaw);
+
+        // Spherical orbit around target
+        Vec3 offset = {
+            distance * cp * sy,
+            distance * sp,
+            distance * cp * cy
+        };
+
+        return add(target, offset);
+    }
+
+    Vec3 forward() const
+    {
+        return normalize(sub(target, position()));
+    }
+
+    Vec3 right() const
+    {
+        const Vec3 world_up = { 0.0f, 1.0f, 0.0f };
+        return normalize(cross(forward(), world_up));
+    }
+
+    Vec3 up() const
+    {
+        return normalize(cross(right(), forward()));
+    }
+
+    Mat4 view_matrix() const
+    {
+        return look_at(position(), target, up());
+    }
+
+    void orbit(float dx, float dy)
+    {
+        yaw += dx;
+        pitch += dy;
+
+        const float pitch_limit = 1.45f;
+        pitch = std::clamp(pitch, -pitch_limit, pitch_limit);
+    }
+
+    void zoom(float delta)
+    {
+        distance -= delta;
+        distance = std::clamp(distance, 1.5f, 20.0f);
+    }
+
+    void pan(float dx, float dy)
+    {
+        Vec3 r = right();
+        Vec3 u = up();
+
+        target = add(target, add(mul(r, dx), mul(u, dy)));
+    }
+
+    void reset()
+    {
+        target = { 0.0f, 0.0f, 0.0f };
+        yaw = 0.6f;
+        pitch = 0.4f;
+        distance = 3.0f;
+    }
+};
 
 static void create_cube(unsigned int& vbo, unsigned int& vao)
 {
@@ -280,12 +447,8 @@ int main(int narg, char** argv)
     ImGui_ImplOpenGL3_Init(glsl_version);
     ImGui::StyleColorsDark();
 
-    float yaw = 0.6f;
-    float pitch = 0.4f;
-    float distance = 3.0f;
-    float target_x = 0.0f;
-    float target_y = 0.0f;
-    float target_z = 0.0f;
+    //
+    OrbitCamera camera;
     float tint[3] = { 1.0f, 1.0f, 1.0f };
 
     while (!glfwWindowShouldClose(window))
@@ -305,11 +468,7 @@ int main(int narg, char** argv)
 
         if (ImGui::Button("Reset View"))
         {
-            yaw = 0.6f;
-            pitch = 0.4f;
-            distance = 3.0f;
-            target_x = 0.0f;
-            target_y = 0.0f;
+            camera.reset();
         }
         ImGui::End();
 
@@ -355,45 +514,19 @@ int main(int narg, char** argv)
         if (viewport_active && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
         {
             const ImVec2 drag = ImGui::GetIO().MouseDelta;
-            //yaw += drag.x * 0.01f;
-            //pitch += drag.y * 0.01f;
-            yaw -= drag.x * 0.01f;
-            pitch -= drag.y * 0.01f;
-
-            const float pitch_limit = 1.45f;
-            pitch = std::clamp(pitch, -pitch_limit, pitch_limit);
+            camera.orbit(-drag.x * 0.01f, drag.y * 0.01f);
         }
 
         if (viewport_active && ImGui::IsMouseDragging(ImGuiMouseButton_Right))
         {
             const ImVec2 drag = ImGui::GetIO().MouseDelta;
-            const float pan_speed = 0.0025f * distance;
-
-            // Camera right vector projected onto the ground plane.
-            const float cy = std::cos(yaw);
-            const float sy = std::sin(yaw);
-
-            const float right_x = cy;
-            const float right_y = 0.0f;
-            const float right_z = -sy;
-
-            // Simple camera up vector.
-            const float up_x = 0.0f;
-            const float up_y = 1.0f;
-            const float up_z = 0.0f;
-
-            const float dx = -drag.x * pan_speed;
-            const float dy = drag.y * pan_speed;
-
-            target_x += right_x * dx + up_x * dy;
-            target_y += right_y * dx + up_y * dy;
-            target_z += right_z * dx + up_z * dy;
+            const float pan_speed = 0.0025f * camera.distance;
+            camera.pan(-drag.x * pan_speed, drag.y * pan_speed);
         }
 
         if (viewport_hovered && std::fabs(ImGui::GetIO().MouseWheel) > 0.0f)
         {
-            distance -= ImGui::GetIO().MouseWheel * 0.25f;
-            distance = std::clamp(distance, 1.5f, 10.0f);
+            camera.zoom(ImGui::GetIO().MouseWheel * 0.25f);
         }
 
         ImGui::End();
@@ -406,15 +539,8 @@ int main(int narg, char** argv)
 
         const float aspect = static_cast<float>(viewport_fb_w) / static_cast<float>(viewport_fb_h);
         Mat4 proj = perspective(45.0f * PI / 180.0f, aspect, 0.1f, 100.0f);
-
         Mat4 model = identity();
-
-        // Pan by shifting the scene in camera space before the orbit rotation.
-        Mat4 target_translate = translate(-target_x, -target_y, -target_z);
-        Mat4 orbit = multiply(rotate_x(-pitch), rotate_y(-yaw));
-        Mat4 dolly = translate(0.0f, 0.0f, -distance);
-
-        Mat4 view = multiply(dolly, multiply(orbit, target_translate));
+        Mat4 view = camera.view_matrix();
         Mat4 mvp = multiply(proj, multiply(view, model));
 
         scene_shader.use();
