@@ -285,6 +285,7 @@ int main(int narg, char** argv)
     float distance = 3.0f;
     float target_x = 0.0f;
     float target_y = 0.0f;
+    float target_z = 0.0f;
     float tint[3] = { 1.0f, 1.0f, 1.0f };
 
     while (!glfwWindowShouldClose(window))
@@ -366,10 +367,27 @@ int main(int narg, char** argv)
         if (viewport_active && ImGui::IsMouseDragging(ImGuiMouseButton_Right))
         {
             const ImVec2 drag = ImGui::GetIO().MouseDelta;
-
             const float pan_speed = 0.0025f * distance;
-            target_x -= drag.x * pan_speed;
-            target_y += drag.y * pan_speed;
+
+            // Camera right vector projected onto the ground plane.
+            const float cy = std::cos(yaw);
+            const float sy = std::sin(yaw);
+
+            const float right_x = cy;
+            const float right_y = 0.0f;
+            const float right_z = -sy;
+
+            // Simple camera up vector.
+            const float up_x = 0.0f;
+            const float up_y = 1.0f;
+            const float up_z = 0.0f;
+
+            const float dx = -drag.x * pan_speed;
+            const float dy = drag.y * pan_speed;
+
+            target_x += right_x * dx + up_x * dy;
+            target_y += right_y * dx + up_y * dy;
+            target_z += right_z * dx + up_z * dy;
         }
 
         if (viewport_hovered && std::fabs(ImGui::GetIO().MouseWheel) > 0.0f)
@@ -392,11 +410,11 @@ int main(int narg, char** argv)
         Mat4 model = identity();
 
         // Pan by shifting the scene in camera space before the orbit rotation.
-        Mat4 pan = translate(-target_x, -target_y, 0.0f);
+        Mat4 target_translate = translate(-target_x, -target_y, -target_z);
         Mat4 orbit = multiply(rotate_x(-pitch), rotate_y(-yaw));
         Mat4 dolly = translate(0.0f, 0.0f, -distance);
 
-        Mat4 view = multiply(dolly, multiply(orbit, pan));
+        Mat4 view = multiply(dolly, multiply(orbit, target_translate));
         Mat4 mvp = multiply(proj, multiply(view, model));
 
         scene_shader.use();
