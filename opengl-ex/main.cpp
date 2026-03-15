@@ -359,6 +359,21 @@ struct OrbitCamera
     }
 };
 
+struct Ray
+{
+    Vec3 origin;
+    Vec3 dir;
+};
+
+static Ray make_camera_ray(
+    const OrbitCamera& camera,
+    float mouse_x,
+    float mouse_y,
+    float viewport_w,
+    float viewport_h,
+    float fov_y_radians);
+static bool intersect_ray_unit_cube(const Ray& ray, int& out_face, float& out_t);
+
 //-------------------------------
 struct AppState
 {
@@ -366,7 +381,87 @@ struct AppState
     int picked_face = -1;
 };
 
-static std::string run_automation_command(AppState& app, const std::string& line)
+struct AutomationRecorder
+{
+    bool enabled = false;
+    bool session_started = false;
+    char path[256] = "recorded_commands.txt";
+    std::vector<std::string> commands;
+    std::string last_command;
+};
+
+struct DragRecordingState
+{
+    bool orbit_active = false;
+    bool pan_active = false;
+    float orbit_dx = 0.0f;
+    float orbit_dy = 0.0f;
+    float pan_dx = 0.0f;
+    float pan_dy = 0.0f;
+};
+
+static void reset_recording_file(AutomationRecorder& recorder)
+{
+    if (recorder.path[0] == '\0')
+        return;
+
+    std::ofstream fout(recorder.path, std::ios::trunc);
+    if (!fout.good())
+        return;
+
+    fout << "# recorded automation script\n";
+    recorder.session_started = true;
+}
+
+static void append_recorded_command(AutomationRecorder& recorder, const std::string& cmd)
+{
+    if (!recorder.enabled)
+        return;
+
+    if (!recorder.session_started)
+        reset_recording_file(recorder);
+
+    recorder.commands.push_back(cmd);
+    recorder.last_command = cmd;
+
+    std::ofstream fout(recorder.path, std::ios::app);
+    if (fout.good())
+        fout << cmd << "\n";
+}
+
+static bool save_recording_snapshot(const AutomationRecorder& recorder)
+{
+    if (recorder.path[0] == '\0')
+        return false;
+
+    std::ofstream fout(recorder.path, std::ios::trunc);
+    if (!fout.good())
+        return false;
+
+    fout << "# recorded automation script\n";
+    for (const std::string& cmd : recorder.commands)
+        fout << cmd << "\n";
+
+    return true;
+}
+
+struct AutomationPlayback
+{
+    bool active = false;
+    bool rewind = false;  //after finish, rewind and play from start again
+    std::vector<std::string> commands;
+    size_t next_index = 0;
+    int wait_frames = 0;
+    std::string input_path = "automation_in.txt";
+    std::string output_path = "automation_out.txt";
+};
+
+static std::string run_automation_command(
+    AppState& app,
+    const std::string& line,
+    float viewport_w,
+    float viewport_h,
+    float fov_y_radians)
 {
     std::istringstream iss(line);
     std::string cmd;
@@ -416,6 +511,33 @@ static std::string run_automation_command(AppState& app, const std::string& line
         return "ok set_picked_face";
     }
 
+    if (cmd == "pick_face_at_viewport")
+    {
+        float x = 0.0f, y = 0.0f;
+        iss >> x >> y;
+
+        if (viewport_w <= 0.0f || viewport_h <= 0.0f)
+            return "error invalid_viewport";
+
+        if (x < 0.0f || x > viewport_w || y < 0.0f || y > viewport_h)
+        {
+            app.picked_face = -1;
+            return "ok pick_face_at_viewport miss";
+        }
+
+        Ray ray = make_camera_ray(app.camera, x, y, viewport_w, viewport_h, fov_y_radians);
+        int hit_face = -1;
+        float hit_t = 0.0f;
+        if (intersect_ray_unit_cube(ray, hit_face, hit_t))
+        {
+            app.picked_face = hit_face;
+            return "ok pick_face_at_viewport";
+        }
+
+        app.picked_face = -1;
+        return "ok pick_face_at_viewport miss";
+    }
+
     if (cmd == "get_picked_face")
     {
         return "picked_face " + std::to_string(app.picked_face);
@@ -434,34 +556,97 @@ static std::string run_automation_command(AppState& app, const std::string& line
     return "error unknown_command";
 }
 
-static void process_automation_file(AppState& app, const std::string& input_path, const std::string& output_path)
+static bool try_load_automation_file(AutomationPlayback& playback)
 {
-    std::ifstream fin(input_path);
-    if (!fin.good())
-        return;
+    if (playback.active)
+        return false;
 
-    std::ofstream fout(output_path, std::ios::app);
+    std::ifstream fin(playback.input_path);
+    if (!fin.good()) {
+        return false;
+    }
+
+    playback.commands.clear();
+    playback.next_index = 0;
+    playback.wait_frames = 0;
+
     std::string line;
     while (std::getline(fin, line))
     {
         if (line.empty())
             continue;
 
-        std::string result = run_automation_command(app, line);
-        fout << line << " => " << result << "\n";
+        const size_t first_non_space = line.find_first_not_of(" \t\r\n");
+        if (first_non_space == std::string::npos)
+            continue;
+        if (line[first_non_space] == '#')
+            continue;
+
+        playback.commands.push_back(line);
     }
 
     fin.close();
-    std::remove(input_path.c_str());
+    //std::remove(playback.input_path.c_str());
+
+    if (playback.commands.empty())
+        return false;
+
+    playback.active = true;
+
+    std::ofstream fout(playback.output_path, std::ios::app);
+    fout << "# loaded " << playback.commands.size() << " commands\n";
+    return true;
 }
 
-//-------------------------------
-struct Ray
+static void process_automation_step(
+    AppState& app,
+    AutomationPlayback& playback,
+    float viewport_w,
+    float viewport_h,
+    float fov_y_radians)
 {
-    Vec3 origin;
-    Vec3 dir;
-};
+    if (!playback.active)
+        return;
 
+    if (playback.wait_frames > 0)
+    {
+        playback.wait_frames--;
+        return;
+    }
+
+    if (playback.next_index >= playback.commands.size())
+    {
+        playback.active = false;
+        std::ofstream fout(playback.output_path, std::ios::app);
+        fout << "# replay finished\n";
+        return;
+    }
+
+    const std::string& line = playback.commands[playback.next_index++];
+    if (line.empty())
+        return;
+
+    std::istringstream iss(line);
+    std::string cmd;
+    iss >> cmd;
+
+    std::string result;
+    if (cmd == "wait")
+    {
+        int frames = 0;
+        iss >> frames;
+        playback.wait_frames = std::max(0, frames);
+        result = "ok wait";
+    }
+    else
+    {
+        result = run_automation_command(app, line, viewport_w, viewport_h, fov_y_radians);
+    }
+
+    std::ofstream fout(playback.output_path, std::ios::app);
+    fout << line << " => " << result << "\n";
+}
+//-------------------------------
 static Ray make_camera_ray(
     const OrbitCamera& camera,
     float mouse_x,
@@ -674,6 +859,29 @@ int main(int narg, char** argv)
 {
     FileManager::init_exe_path(argv[0]);
 
+    bool start_record_mode = false;
+    std::string start_record_path = "recorded_commands.txt";
+    AutomationPlayback playback;
+    for (int i = 1; i < narg; ++i)
+    {
+        std::string arg = argv[i];
+        if (arg == "--replay" && i + 1 < narg)
+        {
+            playback.input_path = argv[++i];
+            playback.active = false;
+        }
+        else if (arg == "--automation-out" && i + 1 < narg)
+        {
+            playback.output_path = argv[++i];
+        }
+        else if (arg == "--record")
+        {
+            start_record_mode = true;
+            if (i + 1 < narg)
+                start_record_path = argv[++i];
+        }
+    }
+
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())
         return 1;
@@ -738,6 +946,17 @@ int main(int narg, char** argv)
 
     //
     AppState app;
+
+    //
+    AutomationRecorder recorder;
+    DragRecordingState drag_record;
+    if (start_record_mode)
+    {
+        recorder.enabled = true;
+        std::snprintf(recorder.path, sizeof(recorder.path), "%s", start_record_path.c_str());
+        reset_recording_file(recorder);
+    }
+
     float tint[3] = { 1.0f, 1.0f, 1.0f };
     //for face picking
     const char* face_names[6] = {
@@ -773,7 +992,50 @@ int main(int narg, char** argv)
         if (ImGui::Button("Reset View"))
         {
             app.camera.reset();
+            append_recorded_command(recorder, "reset_camera");
         }
+
+        ImGui::Separator();
+        bool record_enabled = recorder.enabled;
+        if (ImGui::Checkbox("Record automation", &record_enabled))
+        {
+            recorder.enabled = record_enabled;
+            if (recorder.enabled)
+                reset_recording_file(recorder);
+        }
+        ImGui::InputText("Record file", recorder.path, IM_ARRAYSIZE(recorder.path));
+
+        if (ImGui::Button("Clear Recording"))
+        {
+            recorder.commands.clear();
+            recorder.last_command.clear();
+            if (recorder.enabled)
+                reset_recording_file(recorder);
+        }
+
+        ImGui::SameLine();
+
+        if (ImGui::Button("Save Recording"))
+        {
+            save_recording_snapshot(recorder);
+        }
+
+        ImGui::Text("Recorded commands: %d", static_cast<int>(recorder.commands.size()));
+        if (!recorder.last_command.empty())
+            ImGui::Text("Last recorded: %s", recorder.last_command.c_str());
+
+        ImGui::Text("Replay input: %s", playback.input_path.c_str());
+        ImGui::Text("Replay output: %s", playback.output_path.c_str());
+        if (playback.active)
+            ImGui::Text("Replay active: step %d / %d", (int)playback.next_index, (int)playback.commands.size());
+        else
+            ImGui::Text("Replay idle");
+
+        if (ImGui::Button("Load Replay Script"))
+        {
+            try_load_automation_file(playback);
+        }
+
         ImGui::End();
 
         ImGui::Begin("3D Render View");
@@ -819,12 +1081,28 @@ int main(int narg, char** argv)
         {
             left_drag_started = true;
             const ImVec2 drag = ImGui::GetIO().MouseDelta;
-            app.camera.orbit(-drag.x * 0.01f, drag.y * 0.01f);
+            const float dx = -drag.x * 0.01f;
+            const float dy = drag.y * 0.01f;
+            app.camera.orbit(dx, dy);
+
+            drag_record.orbit_active = true;
+            drag_record.orbit_dx += dx;
+            drag_record.orbit_dy += dy;
         }
 
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
         {
-            if (viewport_hovered && !left_drag_started)
+            if (drag_record.orbit_active)
+            {
+                std::ostringstream oss;
+                oss << "orbit " << drag_record.orbit_dx << " " << drag_record.orbit_dy;
+                append_recorded_command(recorder, oss.str());
+
+                drag_record.orbit_active = false;
+                drag_record.orbit_dx = 0.0f;
+                drag_record.orbit_dy = 0.0f;
+            }
+            else if (viewport_hovered && !left_drag_started)
             {
                 //click to pick a face
                 ImVec2 mouse = ImGui::GetMousePos();
@@ -848,6 +1126,14 @@ int main(int narg, char** argv)
                         app.picked_face = hit_face;
                     else
                         app.picked_face = -1;
+
+                    std::ostringstream action;
+                    action << "pick_face_at_viewport " << local_x << " " << local_y;
+                    append_recorded_command(recorder, action.str());
+
+                    std::ostringstream assertion;
+                    assertion << "assert_picked_face " << app.picked_face;
+                    append_recorded_command(recorder, assertion.str());
                 }
             }
 
@@ -858,12 +1144,37 @@ int main(int narg, char** argv)
         {
             const ImVec2 drag = ImGui::GetIO().MouseDelta;
             const float pan_speed = 0.0025f * app.camera.distance;
-            app.camera.pan(-drag.x * pan_speed, drag.y * pan_speed);
+            const float dx = -drag.x * pan_speed;
+            const float dy = drag.y * pan_speed;
+            app.camera.pan(dx, dy);
+
+            drag_record.pan_active = true;
+            drag_record.pan_dx += dx;
+            drag_record.pan_dy += dy;
+        }
+
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+        {
+            if (drag_record.pan_active)
+            {
+                std::ostringstream oss;
+                oss << "pan " << drag_record.pan_dx << " " << drag_record.pan_dy;
+                append_recorded_command(recorder, oss.str());
+
+                drag_record.pan_active = false;
+                drag_record.pan_dx = 0.0f;
+                drag_record.pan_dy = 0.0f;
+            }
         }
 
         if (viewport_hovered && std::fabs(ImGui::GetIO().MouseWheel) > 0.0f)
         {
-            app.camera.zoom(ImGui::GetIO().MouseWheel * 0.25f);
+            const float dz = ImGui::GetIO().MouseWheel * 0.25f;
+            app.camera.zoom(dz);
+
+            std::ostringstream oss;
+            oss << "zoom " << dz;
+            append_recorded_command(recorder, oss.str());
         }
 
         ImGui::End();
@@ -913,9 +1224,19 @@ int main(int narg, char** argv)
 
         glfwSwapBuffers(window);
 
-        //test automation
-        process_automation_file(app, "automation_in.txt", "automation_out.txt");
-    }
+        // test automation replay
+        if (!playback.active && playback.rewind)
+            try_load_automation_file(playback);
+
+        process_automation_step(
+            app,
+            playback,
+            static_cast<float>(viewport_fb_w),
+            static_cast<float>(viewport_fb_h),
+            45.0f * PI / 180.0f);
+    }  //while loop
+    if (recorder.enabled)
+        save_recording_snapshot(recorder);
 
     glDeleteFramebuffers(1, &viewport_fbo);
     glDeleteTextures(1, &viewport_tex);
