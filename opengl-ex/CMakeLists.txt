@@ -6,12 +6,17 @@ set(OpenGL_GL_PREFERENCE "GLVND")
 find_package(OpenGL REQUIRED)
 
 set(backend_dir ${CMAKE_SOURCE_DIR}/submodules/imgui/backend)
-add_executable( ${PROJECT_NAME}
-                main.cpp
-                opengl_shader.cpp
-                file_manager.cpp
-                opengl_shader.h
-                file_manager.h
+
+set(src_files
+    app_state.h     file_manager.cpp     math3d.h           picking.cpp
+    automation.cpp  file_manager.h       opengl_shader.cpp  picking.h
+    automation.h                         opengl_shader.h    ui_panels.cpp
+    cube_mesh.cpp   orbit_camera.cpp     ui_panels.h
+    cube_mesh.h     math3d.cpp           orbit_camera.h
+    viewport_renderer.cpp viewport_renderer.h
+    main.cpp
+)
+add_executable( ${PROJECT_NAME} ${src_files}
                 assets/simple-shader.vs
                 assets/simple-shader.fs )
 
