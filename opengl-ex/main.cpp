@@ -12,6 +12,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <sstream>
+#include <fstream>
+#include <string>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -357,6 +360,102 @@ struct OrbitCamera
 };
 
 //-------------------------------
+struct AppState
+{
+    OrbitCamera camera;
+    int picked_face = -1;
+};
+
+static std::string run_automation_command(AppState& app, const std::string& line)
+{
+    std::istringstream iss(line);
+    std::string cmd;
+    iss >> cmd;
+
+    if (cmd.empty())
+        return "empty";
+
+    if (cmd == "reset_camera")
+    {
+        app.camera.reset();
+        return "ok reset_camera";
+    }
+
+    if (cmd == "orbit")
+    {
+        float dx = 0.0f, dy = 0.0f;
+        iss >> dx >> dy;
+        app.camera.orbit(dx, dy);
+        return "ok orbit";
+    }
+
+    if (cmd == "pan")
+    {
+        float dx = 0.0f, dy = 0.0f;
+        iss >> dx >> dy;
+        app.camera.pan(dx, dy);
+        return "ok pan";
+    }
+
+    if (cmd == "zoom")
+    {
+        float dz = 0.0f;
+        iss >> dz;
+        app.camera.zoom(dz);
+        return "ok zoom";
+    }
+
+    if (cmd == "set_picked_face")
+    {
+        int face = -1;
+        iss >> face;
+        if (face < -1 || face > 5)
+            return "error invalid_face";
+
+        app.picked_face = face;
+        return "ok set_picked_face";
+    }
+
+    if (cmd == "get_picked_face")
+    {
+        return "picked_face " + std::to_string(app.picked_face);
+    }
+
+    if (cmd == "assert_picked_face")
+    {
+        int expected = -1;
+        iss >> expected;
+        if (app.picked_face == expected)
+            return "ok assert_picked_face";
+        return "fail expected " + std::to_string(expected) +
+            " actual " + std::to_string(app.picked_face);
+    }
+
+    return "error unknown_command";
+}
+
+static void process_automation_file(AppState& app, const std::string& input_path, const std::string& output_path)
+{
+    std::ifstream fin(input_path);
+    if (!fin.good())
+        return;
+
+    std::ofstream fout(output_path, std::ios::app);
+    std::string line;
+    while (std::getline(fin, line))
+    {
+        if (line.empty())
+            continue;
+
+        std::string result = run_automation_command(app, line);
+        fout << line << " => " << result << "\n";
+    }
+
+    fin.close();
+    std::remove(input_path.c_str());
+}
+
+//-------------------------------
 struct Ray
 {
     Vec3 origin;
@@ -638,10 +737,9 @@ int main(int narg, char** argv)
     ImGui::StyleColorsDark();
 
     //
-    OrbitCamera camera;
+    AppState app;
     float tint[3] = { 1.0f, 1.0f, 1.0f };
     //for face picking
-    int picked_face = -1;
     const char* face_names[6] = {
         "face 1 (front)",
         "face 2 (back)",
@@ -667,14 +765,14 @@ int main(int narg, char** argv)
         ImGui::BulletText("Mouse wheel: zoom");
         ImGui::ColorEdit3("Tint", tint);
 
-        if (picked_face >= 0)
-            ImGui::Text("%s is picked", face_names[picked_face]);
+        if (app.picked_face >= 0)
+            ImGui::Text("%s is picked", face_names[app.picked_face]);
         else
             ImGui::Text("No face is picked");
 
         if (ImGui::Button("Reset View"))
         {
-            camera.reset();
+            app.camera.reset();
         }
         ImGui::End();
 
@@ -721,7 +819,7 @@ int main(int narg, char** argv)
         {
             left_drag_started = true;
             const ImVec2 drag = ImGui::GetIO().MouseDelta;
-            camera.orbit(-drag.x * 0.01f, drag.y * 0.01f);
+            app.camera.orbit(-drag.x * 0.01f, drag.y * 0.01f);
         }
 
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
@@ -737,7 +835,7 @@ int main(int narg, char** argv)
                     local_y >= 0.0f && local_y <= avail.y)
                 {
                     Ray ray = make_camera_ray(
-                        camera,
+                        app.camera,
                         local_x,
                         local_y,
                         avail.x,
@@ -747,9 +845,9 @@ int main(int narg, char** argv)
                     int hit_face = -1;
                     float hit_t = 0.0f;
                     if (intersect_ray_unit_cube(ray, hit_face, hit_t))
-                        picked_face = hit_face;
+                        app.picked_face = hit_face;
                     else
-                        picked_face = -1;
+                        app.picked_face = -1;
                 }
             }
 
@@ -759,13 +857,13 @@ int main(int narg, char** argv)
         if (viewport_active && ImGui::IsMouseDragging(ImGuiMouseButton_Right))
         {
             const ImVec2 drag = ImGui::GetIO().MouseDelta;
-            const float pan_speed = 0.0025f * camera.distance;
-            camera.pan(-drag.x * pan_speed, drag.y * pan_speed);
+            const float pan_speed = 0.0025f * app.camera.distance;
+            app.camera.pan(-drag.x * pan_speed, drag.y * pan_speed);
         }
 
         if (viewport_hovered && std::fabs(ImGui::GetIO().MouseWheel) > 0.0f)
         {
-            camera.zoom(ImGui::GetIO().MouseWheel * 0.25f);
+            app.camera.zoom(ImGui::GetIO().MouseWheel * 0.25f);
         }
 
         ImGui::End();
@@ -779,7 +877,7 @@ int main(int narg, char** argv)
         const float aspect = static_cast<float>(viewport_fb_w) / static_cast<float>(viewport_fb_h);
         Mat4 proj = perspective(45.0f * PI / 180.0f, aspect, 0.1f, 100.0f);
         Mat4 model = identity();
-        Mat4 view = camera.view_matrix();
+        Mat4 view = app.camera.view_matrix();
         Mat4 mvp = multiply(proj, multiply(view, model));
 
         scene_shader.use();
@@ -791,7 +889,7 @@ int main(int narg, char** argv)
 
         for (int face = 0; face < 6; ++face)
         {
-            if (face == picked_face)
+            if (face == app.picked_face)
                 scene_shader.setUniform("tint", 1.0f, 1.0f, 0.2f); // highlight
             else
                 scene_shader.setUniform("tint", tint[0], tint[1], tint[2]);
@@ -814,6 +912,9 @@ int main(int narg, char** argv)
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
+
+        //test automation
+        process_automation_file(app, "automation_in.txt", "automation_out.txt");
     }
 
     glDeleteFramebuffers(1, &viewport_fbo);
